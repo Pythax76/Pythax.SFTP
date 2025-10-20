@@ -1,0 +1,31 @@
+# Core SFTP functionality
+paramiko>=3.4.0
+
+# GUI framework (tkinter is built-in, but we may need additional GUI components)
+pillow>=10.0.0
+
+# Configuration management
+pyyaml>=6.0.1
+
+# Progress bars and UI enhancements
+tqdm>=4.66.0
+
+# Secure password handling
+cryptography>=41.0.0
+
+# File operations and utilities
+pathlib2>=2.3.7
+
+# Date/time utilities
+python-dateutil>=2.8.2
+
+# JSON schema validation
+jsonschema>=4.19.0
+
+# Development and testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+
+# Code formatting and linting
+black>=23.7.0
+flake8>=6.0.0
