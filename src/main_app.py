@@ -12,10 +12,10 @@ import os
 from typing import Optional, Dict, Any
 import logging
 
-from .sftp_client import SFTPClient
-from .config_manager import ConfigManager
-from .logger import setup_application_logging, ErrorHandler
-from .gui import ConnectionDialog, FileListFrame, ProgressDialog
+from sftp_client import SFTPClient
+from config_manager import ConfigManager
+from logger import setup_application_logging, ErrorHandler
+from gui import ConnectionDialog, FileListFrame, ProgressDialog, DragDropConfirmDialog
 
 
 class SFTPClientApp:
@@ -160,6 +160,9 @@ class SFTPClientApp:
         
         self.remote_frame = FileListFrame(remote_container, "Remote Files", is_remote=True)
         self.remote_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Set up drag-and-drop between frames
+        self.setup_drag_and_drop()
     
     def create_status_bar(self):
         """Create the status bar."""
@@ -174,6 +177,77 @@ class SFTPClientApp:
         self.connection_status_var = tk.StringVar(value="Disconnected")
         connection_label = ttk.Label(status_frame, textvariable=self.connection_status_var)
         connection_label.pack(side=tk.RIGHT, padx=5, pady=2)
+    
+    def setup_drag_and_drop(self):
+        """Set up drag-and-drop functionality between file panels."""
+        # Set each frame as the drop target for the other
+        self.local_frame.set_drop_target(self.remote_frame)
+        self.remote_frame.set_drop_target(self.local_frame)
+        
+        # Set configuration manager for both frames
+        self.local_frame.set_config_manager(self.config_manager)
+        self.remote_frame.set_config_manager(self.config_manager)
+        
+        # Set transfer callbacks
+        self.local_frame.set_transfer_callback(self.handle_drag_drop_transfer)
+        self.remote_frame.set_transfer_callback(self.handle_drag_drop_transfer)
+        
+        self.logger.info("Drag-and-drop functionality initialized")
+    
+    def handle_drag_drop_transfer(self, files: list, upload: bool):
+        """Handle file transfers initiated by drag-and-drop."""
+        try:
+            if not files:
+                return
+            
+            # Update status
+            action = "upload" if upload else "download"
+            file_count = len(files)
+            self.update_status(f"Starting {action} of {file_count} item(s)...")
+            
+            # Start transfer in background thread
+            def transfer_thread():
+                try:
+                    for filename in files:
+                        if upload:
+                            # Upload from local to remote
+                            local_path = os.path.join(self.local_frame.get_current_path(), filename)
+                            remote_path = f"{self.remote_frame.get_current_path().rstrip('/')}/{filename}"
+                            
+                            if os.path.isfile(local_path):
+                                success = self.sftp_client.upload_file(local_path, remote_path)
+                                if not success:
+                                    self.root.after(0, lambda f=filename: self.update_status(f"Failed to upload {f}"))
+                                    return
+                            elif os.path.isdir(local_path):
+                                # For directories, create remote directory (basic implementation)
+                                success = self.sftp_client.create_remote_directory(remote_path)
+                                if not success:
+                                    self.root.after(0, lambda f=filename: self.update_status(f"Failed to create directory {f}"))
+                                    return
+                        else:
+                            # Download from remote to local
+                            remote_path = f"{self.remote_frame.get_current_path().rstrip('/')}/{filename}"
+                            local_path = os.path.join(self.local_frame.get_current_path(), filename)
+                            
+                            success = self.sftp_client.download_file(remote_path, local_path)
+                            if not success:
+                                self.root.after(0, lambda f=filename: self.update_status(f"Failed to download {f}"))
+                                return
+                    
+                    # Refresh both panels and update status
+                    self.root.after(0, self.refresh_all)
+                    self.root.after(0, lambda: self.update_status(f"{action.capitalize()} completed successfully"))
+                    
+                except Exception as e:
+                    self.logger.error(f"Drag-drop transfer error: {e}")
+                    self.root.after(0, lambda: self.update_status(f"{action.capitalize()} failed: {str(e)}"))
+            
+            threading.Thread(target=transfer_thread, daemon=True).start()
+            
+        except Exception as e:
+            self.logger.error(f"Error handling drag-drop transfer: {e}")
+            self.update_status(f"Transfer failed: {str(e)}")
     
     def refresh_connection_list(self):
         """Refresh the connection dropdown list."""
@@ -302,18 +376,31 @@ class SFTPClientApp:
         """Transfer files between local and remote."""
         def transfer_thread():
             try:
+                self.update_status(f"Transferring {len(files)} file(s)...")
+                
                 for filename in files:
                     if upload:
                         local_path = os.path.join(self.local_frame.get_current_path(), filename)
                         remote_path = f"{self.remote_frame.get_current_path().rstrip('/')}/{filename}"
                         
                         if os.path.isfile(local_path):
-                            self.sftp_client.upload_file(local_path, remote_path)
+                            success = self.sftp_client.upload_file(local_path, remote_path)
+                            if not success:
+                                self.root.after(0, lambda f=filename: self.update_status(f"Failed to upload {f}"))
+                                return
+                        elif os.path.isdir(local_path):
+                            success = self.sftp_client.create_remote_directory(remote_path)
+                            if not success:
+                                self.root.after(0, lambda f=filename: self.update_status(f"Failed to create directory {f}"))
+                                return
                     else:
                         remote_path = f"{self.remote_frame.get_current_path().rstrip('/')}/{filename}"
                         local_path = os.path.join(self.local_frame.get_current_path(), filename)
                         
-                        self.sftp_client.download_file(remote_path, local_path)
+                        success = self.sftp_client.download_file(remote_path, local_path)
+                        if not success:
+                            self.root.after(0, lambda f=filename: self.update_status(f"Failed to download {f}"))
+                            return
                 
                 # Refresh both panels
                 self.root.after(0, self.refresh_all)

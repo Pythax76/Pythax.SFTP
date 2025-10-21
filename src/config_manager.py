@@ -57,7 +57,9 @@ class ConfigManager:
                 "default_local_path": os.path.expanduser("~"),
                 "confirm_overwrites": True,
                 "preserve_timestamps": True,
-                "create_missing_directories": True
+                "create_missing_directories": True,
+                "confirm_local_to_remote": True,
+                "confirm_remote_to_local": True
             },
             "connection": {
                 "timeout": 30,
